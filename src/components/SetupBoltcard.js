@@ -142,7 +142,7 @@ export default function SetupBoltcard({url}) {
             setNdefWritten(true);
             break;
           case 'uidRead':
-            uid = data;
+            setCardUID(data);
             break;
           case 'keyChanged':
             if (data === 0) setKey0Changed(true);
