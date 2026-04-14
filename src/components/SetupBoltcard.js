@@ -131,6 +131,7 @@ export default function SetupBoltcard({url}) {
       const K3 = json.K3 ? json.K3 : json.k3;
       const K4 = json.K4 ? json.K4 : json.k4;
       const lnurlw_base = json.LNURLW ? json.LNURLW : json.lnurlw_base;
+      const privateUID = json.uid_privacy == 'Y';
 
       if (!K0 || !K1 || !K2 || !K3 || !K4 || !lnurlw_base) {
         throw new Error('Error fetching the keys');
@@ -152,10 +153,19 @@ export default function SetupBoltcard({url}) {
 
       // //auth first
       await Ntag424.AuthEv2First('00', key0);
+
+      if (privateUID) {
+        await Ntag424.setPrivateUid();
+      }
+
       const piccOffset = ndefMessage.indexOf('p=') + 9;
       const macOffset = ndefMessage.indexOf('c=') + 9;
       //change file settings
       await Ntag424.setBoltCardFileSettings(piccOffset, macOffset);
+
+      //get uid
+      uid = await Ntag424.getCardUid();
+
       //change keys
       console.log('changekey 1');
       await Ntag424.changeKey('01', key0, K1, '01');
