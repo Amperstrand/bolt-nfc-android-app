@@ -5,6 +5,8 @@ import {Card, Text, ActivityIndicator, Button, Title} from 'react-native-paper';
 import Ntag424 from '../class/Ntag424';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useFocusEffect} from '@react-navigation/native';
+import {normalizeCardConfig, validateCardConfig} from '../utils/CardConfig';
+import {provisionCard, DEFAULT_KEY} from '../utils/provisionCard';
 
 const SetupStep = {
   Init: 1,
@@ -99,7 +101,7 @@ export default function SetupBoltcard({url}) {
       if (key1Version != '00')
         throw new Error('TRY AGAIN AFTER RESETING YOUR CARD!');
 
-      const key0 = '00000000000000000000000000000000';
+      const key0 = DEFAULT_KEY;
       if (byteSize(uid) == 8) {
         //random uid
         //get the real uid by authenticating first
@@ -125,119 +127,64 @@ export default function SetupBoltcard({url}) {
       }
       const json = await response.json();
       console.log(json);
-      const K0 = json.K0 ? json.K0 : json.k0;
-      const K1 = json.K1 ? json.K1 : json.k1;
-      const K2 = json.K2 ? json.K2 : json.k2;
-      const K3 = json.K3 ? json.K3 : json.k3;
-      const K4 = json.K4 ? json.K4 : json.k4;
-      const lnurlw_base = json.LNURLW ? json.LNURLW : json.lnurlw_base;
-      const privateUID = json.uid_privacy == 'Y';
+      const config = normalizeCardConfig(json);
 
-      if (!K0 || !K1 || !K2 || !K3 || !K4 || !lnurlw_base) {
+      if (!validateCardConfig(config)) {
         throw new Error('Error fetching the keys');
       }
 
       setWritingCard(true);
       setStep(SetupStep.WritingCard);
-      //set ndef
-      const ndefMessage = lnurlw_base.includes('?')
-        ? lnurlw_base + '&p=00000000000000000000000000000000&c=0000000000000000'
-        : lnurlw_base +
-          '?p=00000000000000000000000000000000&c=0000000000000000';
 
-      const message = [Ndef.uriRecord(ndefMessage)];
-      const bytes = Ndef.encodeMessage(message);
+      const onProgress = (event, data) => {
+        switch (event) {
+          case 'ndefWritten':
+            setNdefWritten(true);
+            break;
+          case 'uidRead':
+            uid = data;
+            break;
+          case 'keyChanged':
+            if (data === 0) setKey0Changed(true);
+            if (data === 1) setKey1Changed(true);
+            if (data === 2) setKey2Changed(true);
+            if (data === 3) setKey3Changed(true);
+            if (data === 4) setKey4Changed(true);
+            break;
+          case 'allKeysChanged':
+            setWriteKeys('success');
+            break;
+          case 'ndefRead':
+            setNdefRead(data);
+            break;
+          case 'testComplete':
+            setTestp(data.pTest);
+            setTestc(data.cTest);
+            break;
+        }
+      };
 
-      await Ntag424.setNdefMessage(bytes);
-      setNdefWritten(true);
+      const result = await provisionCard({
+        config,
+        ntag: Ntag424,
+        ndef: Ndef,
+        onProgress,
+      });
 
-      // //auth first
-      await Ntag424.AuthEv2First('00', key0);
-
-      if (privateUID) {
-        await Ntag424.setPrivateUid();
-      }
-
-      const piccOffset = ndefMessage.indexOf('p=') + 9;
-      const macOffset = ndefMessage.indexOf('c=') + 9;
-      //change file settings
-      await Ntag424.setBoltCardFileSettings(piccOffset, macOffset);
-
-      //get uid
-      uid = await Ntag424.getCardUid();
-
-      //change keys
-      console.log('changekey 1');
-      await Ntag424.changeKey('01', key0, K1, '01');
-      setKey1Changed(true);
-      console.log('changekey 2');
-      await Ntag424.changeKey('02', key0, K2, '01');
-      setKey2Changed(true);
-      console.log('changekey 3');
-      await Ntag424.changeKey('03', key0, K3, '01');
-      setKey3Changed(true);
-      console.log('changekey 4');
-      await Ntag424.changeKey('04', key0, K4, '01');
-      setKey4Changed(true);
-      console.log('changekey 0');
-      await Ntag424.changeKey('00', key0, K0, '01');
-      setKey0Changed(true);
-      setWriteKeys('success');
-
-      //set offset for ndef header
-      var ndef = await Ntag424.readData('060000');
-      while (ndef[ndef.length - 1] === 0) {
-        //Remomving trailing 0s
-        //@TODO: need to figure out why there are trailing 0s in ndef
-        ndef.pop();
-      }
-      const setNdefMessage = Ndef.uri.decodePayload(ndef);
-      setNdefRead(setNdefMessage);
-
-      //we have the latest read from the card fire it off to the server.
-      const httpsLNURL = String(
-        setNdefMessage.replace('lnurlw://', 'https://'),
-      ).trim();
-      fetch(httpsLNURL)
+      //fire off the bolt service test (not awaited)
+      fetch(result.httpsLNURL)
         .then(response => {
           if (!response.ok) {
             throw new Error(response.statusText);
           }
           return response.json();
         })
-        .then(json => {
+        .then(() => {
           setTestBolt('success');
         })
         .catch(error => {
           setTestBolt('Error: ' + error.message);
         });
-
-      await Ntag424.AuthEv2First('00', K0);
-
-      const params = {};
-      setNdefMessage.replace(
-        /[?&]+([^=&]+)=([^&]*)/gi,
-        function (m, key, value) {
-          params[key] = value;
-          return value;
-        },
-      );
-      if (!('p' in params)) {
-        setTestp('no p value to test');
-        return;
-      }
-      if (!('c' in params)) {
-        setTestc('no c value to test');
-        return;
-      }
-
-      const pVal = params['p'];
-      const cVal = params['c'].slice(0, 16);
-
-      console.log({pVal, cVal});
-      const testResult = await Ntag424.testPAndC(pVal, cVal, uid, K1, K2);
-      setTestp(testResult.pTest ? 'ok' : 'decrypt with key failed');
-      setTestc(testResult.cTest ? 'ok' : 'decrypt with key failed');
     } catch (ex) {
       console.error('Oops!', ex);
       var error = ex;

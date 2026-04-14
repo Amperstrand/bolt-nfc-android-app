@@ -15,6 +15,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import NfcManager, {NfcTech, Ndef} from 'react-native-nfc-manager';
 import DisplayAuthInfo from '../components/DisplayAuthInfo';
 import Ntag424 from '../class/Ntag424';
+import {provisionCard, DEFAULT_KEY} from '../utils/provisionCard';
 
 export default function CreateBoltcardScreen({route}) {
   const {data, timestamp} = route.params;
@@ -91,98 +92,65 @@ export default function CreateBoltcardScreen({route}) {
       if (key1Version != '00')
         throw new Error('TRY AGAIN AFTER RESETING YOUR CARD!');
 
-      //set ndef
-      const ndefMessage = lnurlw_base.includes('?')
-        ? lnurlw_base + '&p=00000000000000000000000000000000&c=0000000000000000'
-        : lnurlw_base +
-          '?p=00000000000000000000000000000000&c=0000000000000000';
+      const config = {
+        k0: keys[0],
+        k1: keys[1],
+        k2: keys[2],
+        k3: keys[3],
+        k4: keys[4],
+        lnurlw_base,
+        privateUID,
+      };
 
-      const message = [Ndef.uriRecord(ndefMessage)];
-      const bytes = Ndef.encodeMessage(message);
+      const onProgress = (event, data) => {
+        switch (event) {
+          case 'ndefWritten':
+            setNdefWritten('success');
+            break;
+          case 'uidRead':
+            setCardUID(data);
+            break;
+          case 'keyChanged':
+            if (data === 0) setKey0Changed(true);
+            if (data === 1) setKey1Changed(true);
+            if (data === 2) setKey2Changed(true);
+            if (data === 3) setKey3Changed(true);
+            if (data === 4) setKey4Changed(true);
+            break;
+          case 'allKeysChanged':
+            setWriteKeys('success');
+            break;
+          case 'ndefRead':
+            setNdefRead(data);
+            break;
+          case 'testComplete':
+            setTestp(data.pTest);
+            setTestc(data.cTest);
+            break;
+        }
+      };
 
-      await Ntag424.setNdefMessage(bytes);
-      setNdefWritten('success');
+      const result = await provisionCard({
+        config,
+        ntag: Ntag424,
+        ndef: Ndef,
+        onProgress,
+      });
 
-      const key0 = '00000000000000000000000000000000';
-      // //auth first
-      await Ntag424.AuthEv2First('00', key0);
-
-      if (privateUID) {
-        await Ntag424.setPrivateUid();
-      }
-      const piccOffset = ndefMessage.indexOf('p=') + 9;
-      const macOffset = ndefMessage.indexOf('c=') + 9;
-      //change file settings
-      await Ntag424.setBoltCardFileSettings(piccOffset, macOffset);
-      //get uid
-      const uid = await Ntag424.getCardUid();
-      console.log('UID', uid);
-      setCardUID(uid);
-
-      //change keys
-      console.log('changekey 1');
-      await Ntag424.changeKey('01', key0, keys[1], '01');
-      setKey1Changed(true);
-      console.log('changekey 2');
-      await Ntag424.changeKey('02', key0, keys[2], '01');
-      setKey2Changed(true);
-      console.log('changekey 3');
-      await Ntag424.changeKey('03', key0, keys[3], '01');
-      setKey3Changed(true);
-      console.log('changekey 4');
-      await Ntag424.changeKey('04', key0, keys[4], '01');
-      setKey4Changed(true);
-      console.log('changekey 0');
-      await Ntag424.changeKey('00', key0, keys[0], '01');
-      setKey0Changed(true);
-      setWriteKeys('success');
-
-      //set offset for ndef header
-      const ndef = await Ntag424.readData('060000');
-      const setNdefMessage = Ndef.uri.decodePayload(ndef);
-      setNdefRead(setNdefMessage);
-
-      //we have the latest read from the card fire it off to the server.
-      const httpsLNURL = setNdefMessage.replace('lnurlw://', 'https://');
-      fetch(httpsLNURL)
-        .then(response => response.json())
-        .then(json => {
+      //fire off the bolt service test (not awaited)
+      fetch(result.httpsLNURL)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(response.statusText);
+          }
+          return response.json();
+        })
+        .then(() => {
           setTestBolt('success');
         })
         .catch(error => {
           setTestBolt('Error: ' + error.message);
         });
-
-      await Ntag424.AuthEv2First('00', keys[0]);
-
-      const params = {};
-      setNdefMessage.replace(
-        /[?&]+([^=&]+)=([^&]*)/gi,
-        function (m, key, value) {
-          params[key] = value;
-        },
-      );
-      if (!'p' in params) {
-        setTestp('no p value to test');
-        return;
-      }
-      if (!'c' in params) {
-        setTestc('no c value to test');
-        return;
-      }
-
-      const pVal = params['p'];
-      const cVal = params['c'].slice(0, 16);
-
-      const testResult = await Ntag424.testPAndC(
-        pVal,
-        cVal,
-        uid,
-        keys[1],
-        keys[2],
-      );
-      setTestp(testResult.pTest ? 'ok' : 'decrypt with key failed');
-      setTestc(testResult.cTest ? 'ok' : 'decrypt with key failed');
     } catch (ex) {
       console.error('Oops!', ex);
       var error = ex;

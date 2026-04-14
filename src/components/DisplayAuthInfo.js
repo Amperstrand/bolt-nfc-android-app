@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, NativeModules, StyleSheet, Text, View, Platform } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { normalizeCardConfig, validateCardConfig } from '../utils/CardConfig';
 
 export default function DisplayAuthInfo(props) {
     
@@ -21,15 +22,16 @@ export default function DisplayAuthInfo(props) {
                         setError(json.reason);
                         return;
                     }
-                    if(!(json.lnurlw_base && json.k0 && json.k1 && json.k2 && json.k3 && json.k4)) {
+                    const config = normalizeCardConfig(json);
+                    if(!validateCardConfig(config)) {
                         setError("The JSON response must contain lnurlw_base, k0, k1, k2, k3, k4 ");
                         return;
                     }
                     
-                    setlnurlw_base(json.lnurlw_base);
-                    if(json.card_name) setCardName(json.card_name);
-                    setKeys([json.k0,json.k1,json.k2,json.k3,json.k4]);
-                    setPrivateUID(json.uid_privacy != undefined && json.uid_privacy == "Y")
+                    setlnurlw_base(config.lnurlw_base);
+                    if(config.cardName) setCardName(config.cardName);
+                    setKeys([config.k0, config.k1, config.k2, config.k3, config.k4]);
+                    setPrivateUID(config.privateUID);
 
                     setReadyToWrite(true);
                     
