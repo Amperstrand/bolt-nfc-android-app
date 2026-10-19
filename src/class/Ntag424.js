@@ -9,6 +9,7 @@ import errorCodes, {
 } from '../constants/ErrorCodes';
 
 var CryptoJS = require('../utils/Cmac');
+var sunVerify = require('../utils/sunVerify');
 var AES = require('crypto-js/aes');
 
 var Ntag424 = NfcManager;
@@ -904,42 +905,8 @@ Ntag424.setPrivateUid = () => {
  * @returns
  */
 Ntag424.testPAndC = async (pVal, cVal, uid, piccKey, macKey) => {
-  var result = {pTest: false, cTest: false};
-  const decPiccData = AES.decrypt(
-    {ciphertext: CryptoJS.enc.Hex.parse(pVal)},
-    CryptoJS.enc.Hex.parse(piccKey),
-    {
-      padding: CryptoJS.pad.NoPadding,
-      mode: CryptoJS.mode.CBC,
-      iv: CryptoJS.enc.Hex.parse('00000000000000000000000000000000'),
-      keySize: 128 / 8,
-    },
-  );
-  const decryptedPiccData =
-    CryptoJS.enc.Hex.stringify(decPiccData).toLowerCase();
-  if (decryptedPiccData.startsWith('c7' + uid.toLowerCase()))
-    result.pTest = true;
-
-  const sdmReadCtr = decryptedPiccData.slice(16, 22);
-  const sv2 = '3cc300010080' + uid + sdmReadCtr;
-  const sesSdmFileReadMAC = CryptoJS.CMAC(
-    CryptoJS.enc.Hex.parse(macKey),
-    CryptoJS.enc.Hex.parse(sv2),
-  );
-  const sesSdmFileReadMACHex = sesSdmFileReadMAC.toString();
-  const sdmMac = CryptoJS.CMAC(CryptoJS.enc.Hex.parse(sesSdmFileReadMACHex));
-  const sdmMacHex = sdmMac.toString();
-
-  const truncatedMacBytes = hexToBytes(sdmMacHex).filter(function (
-    element,
-    index,
-    array,
-  ) {
-    return (index + 1) % 2 === 0;
-  });
-  const truncatedSdmMacHex = bytesToHex(truncatedMacBytes);
-  if (truncatedSdmMacHex == cVal.toLowerCase()) result.cTest = true;
-  return Promise.resolve(result);
+  const {pTest, cTest} = sunVerify.verifySun(pVal, cVal, uid, piccKey, macKey);
+  return Promise.resolve({pTest, cTest});
 };
 
 export default Ntag424;

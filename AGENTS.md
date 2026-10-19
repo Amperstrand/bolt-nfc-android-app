@@ -28,12 +28,31 @@ against the successor app.
 
 ```bash
 npm install
+npm test            # Jest: conformance suite (ntag424-vectors) + snapshot
+npm run vectors:check   # vendored-copy drift guard (sha256 vs LOCK)
 # Android build via the React Native toolchain of the fork's era
 # (npx react-native run-android with an attached device or emulator)
 ```
 
-No CI; verification is manual on-device (NFC write path needs a physical
-card). Treat it as read-mostly.
+No CI; off-device verification is the conformance suite below — the NFC
+write path itself still needs a physical card. Treat it as read-mostly.
+
+### Conformance suite (ntag424-vectors)
+
+`__tests__/ntag424-vectors.test.js` runs the vendored ntag424-vectors
+oracle suite (reference-locked by sha256 in
+`__tests__/conformance/ntag424-vectors/LOCK`). Every vector this app's
+crypto surface can express must pass: `aes_cmac` (the vendored AES-CMAC in
+`src/utils/Cmac.js`), `sv2_build`, `picc_decrypt`, `sun_mac`, and the full
+`sdm_full` chain (positive + negative) via `src/utils/sunVerify.js` — the
+core extracted verbatim from `Ntag424.testPAndC` (which now delegates to
+it), so the suite exercises the legacy verification path this fork exists
+to preserve, not a re-implementation. `derive_keys` vectors are skipped
+aloud (26 of 46): K0–K4 arrive from the issuing service, never derived
+on-device. This pins the historical LNBits-compat chain byte-for-byte
+against the same AN12196 oracle the successor app (bolt-card-programmer)
+and the worker consume — the legacy lineage stays diffable, per this
+repo's purpose.
 
 ## Write-path contract (shared with bolt-card-programmer)
 

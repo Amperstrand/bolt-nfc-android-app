@@ -9,6 +9,7 @@
     "start": "react-native start",
     "postinstall": "rn-nodeify --install buffer,process,stream,crypto,events --hack",
     "test": "jest",
+    "vectors:check": "node scripts/vectors-check.mjs",
     "commit-hash": "echo \"{\\\"commit\\\":\\\"`git rev-parse --short HEAD`\\\"}\" > gitinfo.json"
   },
   "dependencies": {
