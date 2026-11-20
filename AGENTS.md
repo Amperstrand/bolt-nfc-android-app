@@ -57,10 +57,14 @@ repo's purpose.
 ## Write-path contract (shared with bolt-card-programmer)
 
 Provisioning = authenticate with key 0 (factory zeros), change keys 1–4,
-configure file settings + SDM, write the NDEF URL. The keys the app
-fetches from the issuing service must be the deterministic-derivation
-keys the worker's `keygenerator` computes — the write path and the read
-path share one key derivation, decided by the canonical vectors.
+rotate key 0 itself from the factory value to `K0`, configure file
+settings + SDM, write the NDEF URL. The key-0 rotation is mandatory and
+comes last (`SetupBoltcard.js` changeKey `00` with `K0`): a provisioned
+card whose key 0 is left at the public all-zero default can be
+reconfigured by anyone. The keys the app fetches from the issuing
+service must be the deterministic-derivation keys the worker's
+`keygenerator` computes — the write path and the read path share one key
+derivation, decided by the canonical vectors.
 
 ## Rules for agents
 
